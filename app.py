@@ -11,8 +11,7 @@ from utils_dashboard import calcular_metricas_basicas, preparar_series_promedio
 # Configuración general
 # ------------------------------
 st.set_page_config(page_title="SATD Pro", page_icon="🛒", layout="wide")
-
-rol = "Admin"   # "Admin" o "Compras"
+rol = "Admin"
 usuario = "admin"
 nombre = "Administrador"
 st.sidebar.success(f"Bienvenido, {nombre}")
@@ -91,6 +90,9 @@ def asignar_estacionalidad_por_mes(mes_num: int) -> str:
     else:
         return "baja"
 
+MESES_TXT = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"]
+MESES_MAP = {m:i+1 for i,m in enumerate(MESES_TXT)}
+
 # ------------------------------
 # Bienvenida
 # ------------------------------
@@ -112,13 +114,8 @@ if menu == "🏠 Bienvenida":
 elif menu == "🛒 Predicciones":
     st.header("Predicción de reabastecimiento (individual)")
 
-    # si ya hay datos en session_state, úsalos
-    df_ind = None
-    if "df_dashboard" in st.session_state:
-        df_ind = st.session_state["df_dashboard"].copy()
-        st.info("Usando el Excel subido previamente para seleccionar producto ✅")
-
-    st.subheader("Sube tu archivo con productos (opcional si ya subiste)")
+    df_ind = st.session_state.get("df_dashboard")
+    st.subheader("Sube tu archivo con productos (opcional)")
     archivo_ind = st.file_uploader("Archivo Excel o CSV", type=["csv", "xlsx"], key="uploader_ind")
 
     if archivo_ind is not None:
@@ -126,11 +123,10 @@ elif menu == "🛒 Predicciones":
             df_ind = pd.read_csv(archivo_ind)
         else:
             df_ind = pd.read_excel(archivo_ind)
-        st.session_state["df_dashboard"] = df_ind.copy()  # sincroniza para el Dashboard
+        st.session_state["df_dashboard"] = df_ind.copy()
         st.success("Archivo cargado correctamente ✅")
 
     if df_ind is not None:
-        # Normalizar columnas
         colmap = {"Producto":"producto", "Categoria":"categoria", "Inventario":"inventario",
                   "Ventas_promedio_dia":"ventas_promedio_dia", "Mes":"mes", "Lead_time":"lead_time", "Precio":"precio"}
         df_ind = df_ind.rename(columns={k:v for k,v in colmap.items() if k in df_ind.columns})
@@ -204,31 +200,48 @@ elif menu == "📊 Dashboard":
             st.metric("Promedio ventas/día", f"{hist['ventas_promedio_dia'].mean():.2f}")
             st.metric("Pedidos sugeridos", int((hist['inventario'] < hist['ventas_promedio_dia']).sum()))
 
-        # Gráficas (si hay 'mes')
+        # Selector de mes y top producto del mes
         if "mes" in hist.columns:
-            fig_inv = px.line(hist, x="mes", y="inventario", color="producto", title="Inventario por mes")
+            st.subheader("Análisis por mes")
+            mes_sel = st.selectbox("Selecciona mes", sorted(hist["mes"].unique(), key=lambda m: MESES_MAP.get(m, 13)))
+            df_mes = hist[hist["mes"] == mes_sel].copy()
+
+            fig_inv = px.line(df_mes, x="producto", y="inventario", color="categoria", title=f"Inventario - {mes_sel}")
             st.plotly_chart(fig_inv, use_container_width=True)
 
-            fig_vent = px.bar(hist, x="mes", y="ventas_promedio_dia", color="producto", title="Ventas promedio por mes")
+            fig_vent = px.bar(df_mes, x="producto", y="ventas_promedio_dia", color="categoria", title=f"Ventas promedio/día - {mes_sel}")
             st.plotly_chart(fig_vent, use_container_width=True)
 
-            ventas_mes = hist.groupby(["mes","producto"])["ventas_promedio_dia"].sum().reset_index()
-            top_mes = ventas_mes.sort_values(["mes","ventas_promedio_dia"], ascending=[True,False]).groupby("mes").head(1)
-            st.subheader("Producto más vendido por mes")
-            st.dataframe(top_mes, use_container_width=True)
-            fig_top_mes = px.bar(top_mes, x="mes", y="ventas_promedio_dia", color="producto", title="Top producto por mes")
-            st.plotly_chart(fig_top_mes, use_container_width=True)
+            ventas_mes = df_mes.groupby(["producto"])["ventas_promedio_dia"].sum().reset_index()
+            top_prod = ventas_mes.sort_values("ventas_promedio_dia", ascending=False).head(1)
+            st.metric("Producto más vendido en el mes", top_prod.iloc[0]["producto"])
+            st.metric("Ventas promedio/día del top", f"{top_prod.iloc[0]['ventas_promedio_dia']:.2f}")
+
+            # Generar Excel con 100 productos por cada mes (ventas e inventario)
+            st.subheader("Exportar 100 productos por cada mes (ventas e inventario)")
+            if st.button("Generar Excel por mes (100 productos por mes)"):
+                # Para cada mes, tomar hasta 100 filas
+                frames = []
+                for mes_val in sorted(hist["mes"].unique(), key=lambda m: MESES_MAP.get(m, 13)):
+                    df_m = hist[hist["mes"] == mes_val].copy()
+                    # Ordenar por ventas para tomar los más representativos
+                    df_m = df_m.sort_values("ventas_promedio_dia", ascending=False).head(100)
+                    df_m["mes_export"] = mes_val
+                    frames.append(df_m[["mes_export","producto","categoria","inventario","ventas_promedio_dia","lead_time","precio"]])
+                df_export = pd.concat(frames, ignore_index=True)
+                path = export_excel(df_export, "productos_por_mes_100.xlsx")
+                with open(path, "rb") as f:
+                    st.download_button("Descargar Excel por mes", f, file_name="productos_por_mes_100.xlsx")
 
     except Exception as e:
         st.warning(f"No se pudo cargar datos: {e}")
 
 # ------------------------------
-# Reportes históricos (archivo local)
+# Reportes históricos (usa datos subidos si existen)
 # ------------------------------
 elif menu == "📑 Reportes":
     st.header("Reportes y análisis histórico")
     try:
-        # Si hay datos subidos en sesión, usa esos; si no, usa el histórico
         if "df_dashboard" in st.session_state:
             hist = st.session_state["df_dashboard"].copy()
             st.info("Usando datos del Excel subido ✅")
@@ -241,19 +254,17 @@ elif menu == "📑 Reportes":
         if "producto" in hist.columns:
             prod_sel = st.selectbox("Producto", sorted(hist["producto"].unique()))
             dfp = hist[hist["producto"] == prod_sel].copy()
-            # Si no hay fecha, usamos mes para graficar
+            fig = go.Figure()
             if "fecha" in dfp.columns:
                 dfp["ventas_prom_7d"] = dfp["unidades_vendidas"].rolling(7, min_periods=1).mean()
-                fig = go.Figure()
                 fig.add_trace(go.Scatter(x=dfp["fecha"], y=dfp["inventario"], name="Inventario"))
                 fig.add_trace(go.Scatter(x=dfp["fecha"], y=dfp["ventas_prom_7d"], name="Ventas promedio 7d"))
             else:
-                fig = go.Figure()
                 fig.add_trace(go.Bar(x=dfp.get("mes", ["Mes actual"]), y=dfp["inventario"], name="Inventario"))
                 fig.add_trace(go.Bar(x=dfp.get("mes", ["Mes actual"]), y=dfp["ventas_promedio_dia"], name="Ventas prom/día"))
             st.plotly_chart(fig, use_container_width=True)
 
-            if st.button("Exportar Excel (histórico)"):
+            if st.button("Exportar Excel (producto)"):
                 path = export_excel(dfp, "reporte_hist_producto.xlsx")
                 with open(path, "rb") as f:
                     st.download_button("Descargar Excel", f, file_name="reporte_hist_producto.xlsx")
@@ -296,12 +307,13 @@ elif menu == "📦 Catálogo":
                 catalogo.to_csv("data/catalogo_productos.csv", index=False)
                 st.success(f"Producto agregado: {nuevo_prod}")
 
-        # Integrar productos nuevos desde Excel subido
         if "df_dashboard" in st.session_state:
             df_src = st.session_state["df_dashboard"].copy()
             base_nuevos = df_src[["producto","categoria"]].drop_duplicates()
-            base_nuevos["lead_time"] = df_src.get("lead_time", 2)
-            base_nuevos["precio"] = df_src.get("precio", 25)
+            # Asegurar columnas presentes
+            if "lead_time" not in df_src.columns: df_src["lead_time"] = 2
+            if "precio" not in df_src.columns: df_src["precio"] = 25
+            base_nuevos = base_nuevos.merge(df_src[["producto","lead_time","precio"]], on="producto", how="left")
             base_nuevos["es_basico"] = 0
             base_nuevos["stock_minimo"] = 10
             base_nuevos["proveedor"] = "Proveedor X"
@@ -318,7 +330,7 @@ elif menu == "📦 Catálogo":
         st.warning(f"No se pudo cargar catálogo: {e}")
 
 # ------------------------------
-# Subir archivo para análisis en lote (guarda en session_state y genera reporte)
+# Subir archivo (guarda en session_state y genera reporte)
 # ------------------------------
 elif menu == "📂 Subir archivo":
     st.header("Subir archivo de inventario/ventas (CSV/Excel)")
@@ -332,11 +344,8 @@ elif menu == "📂 Subir archivo":
             df = pd.read_excel(uploaded_file)
 
         # Normalizar columnas
-        colmap = {
-            "Producto": "producto", "Categoria": "categoria", "Inventario": "inventario",
-            "Ventas_promedio_dia": "ventas_promedio_dia", "Mes": "mes",
-            "Lead_time": "lead_time", "Precio": "precio"
-        }
+        colmap = {"Producto":"producto", "Categoria":"categoria", "Inventario":"inventario",
+                  "Ventas_promedio_dia":"ventas_promedio_dia", "Mes":"mes", "Lead_time":"lead_time", "Precio":"precio"}
         df = df.rename(columns={k: v for k, v in colmap.items() if k in df.columns})
 
         st.success("Archivo cargado correctamente ✅")
@@ -350,27 +359,34 @@ elif menu == "📂 Subir archivo":
         st.session_state["df_dashboard"] = df.copy()
         st.info("Datos guardados en memoria. El Dashboard y Predicciones usarán este archivo.")
 
-        # Enriquecer con catálogo
+        # Cargar catálogo seguro
         try:
             catalogo = pd.read_csv("data/catalogo_productos.csv")
         except Exception:
             catalogo = pd.DataFrame(columns=["producto","categoria","lead_time","precio"])
 
-        cols_existentes = [c for c in ["producto","lead_time","precio","categoria"] if c in catalogo.columns]
-        df = df.merge(catalogo[cols_existentes], on="producto", how="left", suffixes=("", "_cat"))
+        # Asegurar columnas de catálogo
+        for col in ["producto","categoria","lead_time","precio"]:
+            if col not in catalogo.columns:
+                catalogo[col] = np.nan
 
-        # Resolver valores con prioridad: archivo > catálogo > default
-        df["lead_time"] = df["lead_time"].fillna(df.get("lead_time_cat")).fillna(2)
-        df["precio"] = df["precio"].fillna(df.get("precio_cat")).fillna(25)
-        df["categoria"] = df["categoria"].fillna(df.get("categoria_cat")).fillna("General")
+        # Merge con catálogo (evitar None en fillna)
+        df = df.merge(catalogo[["producto","categoria","lead_time","precio"]].rename(
+            columns={"categoria":"categoria_cat","lead_time":"lead_time_cat","precio":"precio_cat"}
+        ), on="producto", how="left")
+
+        # Corrección: usar combine_first en lugar de fillna(None)
+        if "lead_time" not in df.columns: df["lead_time"] = np.nan
+        if "precio" not in df.columns: df["precio"] = np.nan
+        if "categoria" not in df.columns: df["categoria"] = np.nan
+
+        df["lead_time"] = df["lead_time"].combine_first(df["lead_time_cat"]).fillna(2)
+        df["precio"] = df["precio"].combine_first(df["precio_cat"]).fillna(25)
+        df["categoria"] = df["categoria"].combine_first(df["categoria_cat"]).fillna("General")
 
         # Estacionalidad por mes si existe
         if "mes" in df.columns:
-            meses_map = {
-                "Enero":1,"Febrero":2,"Marzo":3,"Abril":4,"Mayo":5,"Junio":6,
-                "Julio":7,"Agosto":8,"Septiembre":9,"Octubre":10,"Noviembre":11,"Diciembre":12
-            }
-            df["mes_num"] = df["mes"].map(meses_map).fillna(pd.Timestamp.today().month)
+            df["mes_num"] = df["mes"].map(MESES_MAP).fillna(pd.Timestamp.today().month)
             df["estacionalidad"] = df["mes_num"].apply(asignar_estacionalidad_por_mes)
         else:
             mes_actual = pd.Timestamp.today().month
@@ -439,33 +455,22 @@ elif menu == "📂 Subir archivo":
         fig3 = px.pie(df_result, names="decision", title="Distribución de decisiones (Hacer vs No Hacer Pedido)")
         st.plotly_chart(fig3, use_container_width=True)
 
-        # Dashboard con datos del archivo subido (inline)
-        st.subheader("Dashboard con datos del archivo subido")
-        try:
-            met = calcular_metricas_basicas(df.rename(columns={"ventas_promedio_dia":"unidades_vendidas"}))
-            st.metric("Nivel de servicio", f"{met['nivel_servicio']:.1f}%")
-            st.metric("Rotación promedio (unid/día)", f"{met['rotacion_prom']:.2f}")
-            st.metric("Productos críticos (ROP excedido)", f"{met['productos_criticos']}")
-        except Exception:
-            st.metric("Total productos", len(df_result))
-            st.metric("Promedio ventas/día", f"{df_result['ventas_promedio_dia'].mean():.2f}")
-            st.metric("Pedidos sugeridos", int((df_result['decision'] == "Hacer Pedido").sum()))
+        # Guardar datos subidos para ser usados en Dashboard y Reportes
+        st.session_state["df_dashboard"] = df.copy()
 
-        if "mes" in df_result.columns:
-            fig_inv = px.line(df_result, x="mes", y="inventario", color="producto", title="Inventario por mes")
-            st.plotly_chart(fig_inv, use_container_width=True)
-
-            fig_vent_mes = px.bar(df_result, x="mes", y="ventas_promedio_dia", color="producto",
-                                  title="Ventas promedio por mes")
-            st.plotly_chart(fig_vent_mes, use_container_width=True)
-
-            st.subheader("Producto más vendido por mes")
-            ventas_mes = df_result.groupby(["mes","producto"])["ventas_promedio_dia"].sum().reset_index()
-            top_mes = ventas_mes.sort_values(["mes","ventas_promedio_dia"], ascending=[True,False]).groupby("mes").head(1)
-            st.dataframe(top_mes, use_container_width=True)
-            fig_top_mes = px.bar(top_mes, x="mes", y="ventas_promedio_dia", color="producto",
-                                 title="Top producto por mes")
-            st.plotly_chart(fig_top_mes, use_container_width=True)
+        # Exportar 100 productos por cada mes (ventas e inventario)
+        st.subheader("Exportar 100 productos por cada mes (ventas e inventario)")
+        if "mes" in df.columns and st.button("Generar Excel por mes (100 productos por mes)"):
+            frames = []
+            for mes_val in sorted(df["mes"].unique(), key=lambda m: MESES_MAP.get(m, 13)):
+                df_m = df[df["mes"] == mes_val].copy()
+                df_m = df_m.sort_values("ventas_promedio_dia", ascending=False).head(100)
+                df_m["mes_export"] = mes_val
+                frames.append(df_m[["mes_export","producto","categoria","inventario","ventas_promedio_dia","lead_time","precio"]])
+            df_export = pd.concat(frames, ignore_index=True)
+            path = export_excel(df_export, "productos_por_mes_100.xlsx")
+            with open(path, "rb") as f:
+                st.download_button("Descargar Excel por mes", f, file_name="productos_por_mes_100.xlsx")
 
         # Actualizar catálogo automáticamente
         st.subheader("Actualizar catálogo automáticamente")
@@ -474,9 +479,7 @@ elif menu == "📂 Subir archivo":
         except Exception:
             catalogo = pd.DataFrame(columns=["producto","categoria","es_basico","stock_minimo","proveedor","lead_time","precio"])
 
-        base_nuevos = df_result[["producto","categoria"]].drop_duplicates().copy()
-        base_nuevos["lead_time"] = df.get("lead_time", 2)
-        base_nuevos["precio"] = df_result["precio"]
+        base_nuevos = df[["producto","categoria","lead_time","precio"]].drop_duplicates().copy()
         base_nuevos["es_basico"] = 0
         base_nuevos["stock_minimo"] = 10
         base_nuevos["proveedor"] = "Proveedor X"
@@ -512,7 +515,7 @@ elif menu == "📥 Descargar ejemplo":
                              "Suavizante de telas","Jabón líquido","Crema corporal","Rastrillos","Toallas húmedas",
                              "Fibras limpiadoras","Guantes","Lavatrastes","Limpiador piso","Aromatizante"]
     }
-    meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"]
+    meses = MESES_TXT
 
     productos = []
     for cat, items in categorias.items():
