@@ -121,7 +121,6 @@ elif menu == "🛒 Predicciones":
     st.header("Predicción de reabastecimiento (individual)")
 
     df_ind = st.session_state.get("df_dashboard")
-    st.subheader("Sube tu archivo con productos (opcional)")
     archivo_ind = st.file_uploader("Archivo Excel o CSV", type=["csv", "xlsx"], key="uploader_ind")
 
     if archivo_ind is not None:
@@ -136,7 +135,6 @@ elif menu == "🛒 Predicciones":
         colmap = {"Producto":"producto", "Categoria":"categoria", "Inventario":"inventario",
                   "Ventas_promedio_dia":"ventas_promedio_dia", "Mes":"mes", "Lead_time":"lead_time", "Precio":"precio"}
         df_ind = df_ind.rename(columns={k:v for k,v in colmap.items() if k in df_ind.columns})
-
         st.dataframe(df_ind.head(), use_container_width=True)
 
         if "producto" not in df_ind.columns:
@@ -145,23 +143,16 @@ elif menu == "🛒 Predicciones":
             producto_sel = st.selectbox("Selecciona un producto", sorted(df_ind["producto"].unique()))
             datos = df_ind[df_ind["producto"] == producto_sel].iloc[0]
 
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                inventario = st.number_input("Inventario actual (unidades)", min_value=0, value=int(datos.get("inventario", 0)))
-                ventas_prom = st.number_input("Ventas promedio por día", min_value=0.0, value=float(datos.get("ventas_promedio_dia", 0)))
-            with col2:
-                tiempo_entrega = st.number_input("Tiempo de entrega (días)", min_value=0.0, value=float(datos.get("lead_time", 2)))
-                estacionalidad = st.selectbox("Estacionalidad", ["alta", "media", "baja"], index=0)
-                tendencia = st.selectbox("Tendencia", ["subiendo", "estable", "bajando"], index=0)
-            with col3:
-                precio = st.number_input("Precio (MXN)", min_value=0.0, value=float(datos.get("precio", 25)))
-                proyeccion_eventos = st.number_input("Proyección de eventos (extra demanda)", min_value=0.0, value=float(datos.get("proyeccion_eventos", 0)))
-
+            inventario = st.number_input("Inventario actual (unidades)", min_value=0, value=int(datos.get("inventario", 0)))
+            ventas_prom = st.number_input("Ventas promedio por día", min_value=0.0, value=float(datos.get("ventas_promedio_dia", 0)))
+            tiempo_entrega = st.number_input("Tiempo de entrega (días)", min_value=0.0, value=float(datos.get("lead_time", 2)))
+            estacionalidad = st.selectbox("Estacionalidad", ["alta", "media", "baja"], index=0)
+            tendencia = st.selectbox("Tendencia", ["subiendo", "estable", "bajando"], index=0)
+            precio = st.number_input("Precio (MXN)", min_value=0.0, value=float(datos.get("precio", 25)))
+            proyeccion_eventos = st.number_input("Proyección de eventos (extra demanda)", min_value=0.0, value=float(datos.get("proyeccion_eventos", 0)))
             k_ss = st.slider("Nivel de servicio (k para Stock de Seguridad – SS)", 0.5, 3.0, 1.28, 0.01)
 
-            resultados = decision_y_cantidad(
-                inventario, ventas_prom, tiempo_entrega, estacionalidad, tendencia, precio, proyeccion_eventos, k_ss=k_ss
-            )
+            resultados = decision_y_cantidad(inventario, ventas_prom, tiempo_entrega, estacionalidad, tendencia, precio, proyeccion_eventos, k_ss=k_ss)
 
             texto = "HACER PEDIDO" if resultados["hacer_pedido_final"] == 1 else "NO HACER PEDIDO"
             color = "#34A853" if resultados["hacer_pedido_final"] == 1 else "#5F6368"
@@ -175,8 +166,7 @@ elif menu == "🛒 Predicciones":
             st.write(f"- DLT ajustada (Demanda durante el Lead Time): {resultados['dlt_aj']:.2f}")
             st.write(f"- Stock de seguridad (SS – inventario adicional): {resultados['ss']:.2f}")
             st.write(f"- Punto de reorden (ROP – Reorder Point): {resultados['rop']}")
-            st.write(f"- Regla ROP sugiere pedido: {'Sí' if resultados['hacer_pedido_regla'] else 'No'}")
-            st.write(f"- Clasificador sugiere pedido: {'Sí' if resultados['pred_bin']==1 else 'No'}")
+
     else:
         st.info("Sube un archivo en esta sección o en '📂 Subir archivo' para habilitar la predicción individual.")
 
@@ -224,19 +214,13 @@ elif menu == "📊 Dashboard":
                 st.metric("Producto más vendido en el mes", top_prod.iloc[0]["producto"])
                 st.metric("Ventas promedio/día del top", f"{top_prod.iloc[0]['ventas_promedio_dia']:.2f}")
 
-            # Exportar 100 productos por mes
-            st.subheader("Exportar 100 productos por cada mes (ventas e inventario)")
-            if st.button("Generar Excel por mes (100 productos por mes)"):
-                frames = []
-                for mes_val in sorted(hist["mes"].unique(), key=lambda m: MESES_MAP.get(m, 13)):
-                    df_m = hist[hist["mes"] == mes_val].copy()
-                    df_m = df_m.sort_values("ventas_promedio_dia", ascending=False).head(100)
-                    df_m["mes_export"] = mes_val
-                    frames.append(df_m[["mes_export","producto","categoria","inventario","ventas_promedio_dia","lead_time","precio"]])
-                df_export = pd.concat(frames, ignore_index=True)
-                path = export_excel(df_export, "productos_por_mes_100.xlsx")
+            # Exportar SOLO el mes seleccionado
+            st.subheader(f"Exportar productos del mes {mes_sel}")
+            if st.button(f"Generar Excel ({mes_sel})"):
+                df_export = df_mes.sort_values("ventas_promedio_dia", ascending=False).head(100)
+                path = export_excel(df_export, f"productos_{mes_sel}.xlsx")
                 with open(path, "rb") as f:
-                    st.download_button("Descargar Excel por mes", f, file_name="productos_por_mes_100.xlsx")
+                    st.download_button(f"Descargar Excel {mes_sel}", f, file_name=f"productos_{mes_sel}.xlsx")
 
     except Exception as e:
         st.warning(f"No se pudo cargar datos: {e}")
@@ -256,6 +240,18 @@ elif menu == "📑 Reportes":
 
         st.dataframe(hist, use_container_width=True)
 
+        # Listas separadas (si ya tienes df_result en memoria, úsalo; si no, derivamos con reglas simples)
+        if {"producto","inventario","ventas_promedio_dia","mes"} <= set(hist.columns):
+            # Regla básica: pedido cuando inventario < ventas promedio día (proxy ROP)
+            hist["decision"] = np.where(hist["inventario"] < hist["ventas_promedio_dia"], "Hacer Pedido", "No Hacer Pedido")
+
+            st.subheader("Productos que necesitan pedido")
+            st.dataframe(hist[hist["decision"] == "Hacer Pedido"][["producto","categoria","mes","inventario","ventas_promedio_dia"]], use_container_width=True)
+
+            st.subheader("Productos que NO necesitan pedido")
+            st.dataframe(hist[hist["decision"] == "No Hacer Pedido"][["producto","categoria","mes","inventario","ventas_promedio_dia"]], use_container_width=True)
+
+        # Exploración por producto
         if "producto" in hist.columns:
             prod_sel = st.selectbox("Producto", sorted(hist["producto"].unique()))
             dfp = hist[hist["producto"] == prod_sel].copy()
@@ -427,6 +423,13 @@ elif menu == "📂 Subir archivo":
         st.subheader("Resultados del análisis")
         st.dataframe(df_result, use_container_width=True)
 
+        # Listas separadas
+        st.subheader("Productos que necesitan pedido")
+        st.dataframe(df_result[df_result["decision"] == "Hacer Pedido"][["producto","categoria","mes","cantidad_sugerida","inventario","ventas_promedio_dia"]], use_container_width=True)
+
+        st.subheader("Productos que NO necesitan pedido")
+        st.dataframe(df_result[df_result["decision"] == "No Hacer Pedido"][["producto","categoria","mes","inventario","ventas_promedio_dia"]], use_container_width=True)
+
         # Reporte automático
         st.subheader("Reporte de análisis")
         colR1, colR2 = st.columns(2)
@@ -460,7 +463,7 @@ elif menu == "📂 Subir archivo":
         # Guardar datos subidos
         st.session_state["df_dashboard"] = df.copy()
 
-        # Exportar 100 productos por mes
+        # Exportar 100 productos por cada mes (mantener como está aquí si lo necesitas global)
         st.subheader("Exportar 100 productos por cada mes (ventas e inventario)")
         if "mes" in df.columns and st.button("Generar Excel por mes (100 productos por mes)"):
             frames = []
