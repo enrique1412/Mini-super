@@ -61,9 +61,9 @@ def decision_y_cantidad(inventario, ventas_prom, tiempo_entrega, estacionalidad,
 
     f_est = season_factor(estacionalidad)
     f_trend = trend_factor(tendencia)
-    dlt_aj = ventas_prom * tiempo_entrega * f_est * f_trend + proyeccion_eventos
-    ss = max(0.0, k_ss * (ventas_prom * 0.2) * np.sqrt(max(tiempo_entrega, 0.0001)))
-    rop = round(dlt_aj + ss)
+    dlt_aj = ventas_prom * tiempo_entrega * f_est * f_trend + proyeccion_eventos  # DLT ajustada
+    ss = max(0.0, k_ss * (ventas_prom * 0.2) * np.sqrt(max(tiempo_entrega, 0.0001)))  # Stock de seguridad
+    rop = round(dlt_aj + ss)  # Punto de reorden
 
     hacer_pedido_regla = int(inventario <= rop)
     hacer_pedido_final = 1 if (pred_bin == 1 or hacer_pedido_regla == 1) else 0
@@ -107,78 +107,15 @@ if menu == "🏠 Bienvenida":
     - Subir archivo: análisis en lote con IA.
     - Configuración: parámetros del sistema.
     """)
+    st.subheader("Glosario de abreviaturas")
+    st.markdown("""
+    - DLT (Demanda durante el Lead Time)
+    - ROP (Reorder Point / Punto de Reorden)
+    - SS (Stock de Seguridad – inventario adicional)
+    """)
 
 # ------------------------------
-# Predicciones individuales (usa Excel subido si existe)
-# ------------------------------
-elif menu == "🛒 Predicciones":
-    st.header("Predicción de reabastecimiento (individual)")
-
-    df_ind = st.session_state.get("df_dashboard")
-    st.subheader("Sube tu archivo con productos (opcional)")
-    archivo_ind = st.file_uploader("Archivo Excel o CSV", type=["csv", "xlsx"], key="uploader_ind")
-
-    if archivo_ind is not None:
-        if archivo_ind.name.endswith(".csv"):
-            df_ind = pd.read_csv(archivo_ind)
-        else:
-            df_ind = pd.read_excel(archivo_ind)
-        st.session_state["df_dashboard"] = df_ind.copy()
-        st.success("Archivo cargado correctamente ✅")
-
-    if df_ind is not None:
-        colmap = {"Producto":"producto", "Categoria":"categoria", "Inventario":"inventario",
-                  "Ventas_promedio_dia":"ventas_promedio_dia", "Mes":"mes", "Lead_time":"lead_time", "Precio":"precio"}
-        df_ind = df_ind.rename(columns={k:v for k,v in colmap.items() if k in df_ind.columns})
-
-        st.dataframe(df_ind.head(), use_container_width=True)
-
-        if "producto" not in df_ind.columns:
-            st.error("La columna 'producto' es obligatoria.")
-        else:
-            producto_sel = st.selectbox("Selecciona un producto", sorted(df_ind["producto"].unique()))
-            datos = df_ind[df_ind["producto"] == producto_sel].iloc[0]
-
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                inventario = st.number_input("Inventario actual (unidades)", min_value=0, value=int(datos.get("inventario", 0)))
-                ventas_prom = st.number_input("Ventas promedio por día", min_value=0.0, value=float(datos.get("ventas_promedio_dia", 0)))
-            with col2:
-                tiempo_entrega = st.number_input("Tiempo de entrega (días)", min_value=0.0, value=float(datos.get("lead_time", 2)))
-                estacionalidad = st.selectbox("Estacionalidad", ["alta", "media", "baja"], index=0)
-                tendencia = st.selectbox("Tendencia", ["subiendo", "estable", "bajando"], index=0)
-            with col3:
-                precio = st.number_input("Precio (MXN)", min_value=0.0, value=float(datos.get("precio", 25)))
-                proyeccion_eventos = st.number_input("Proyección de eventos (extra demanda)", min_value=0.0, value=float(datos.get("proyeccion_eventos", 0)))
-
-            k_ss = st.slider("Nivel de servicio (k para stock de seguridad)", 0.5, 3.0, 1.28, 0.01)
-
-            resultados = decision_y_cantidad(
-                inventario, ventas_prom, tiempo_entrega, estacionalidad, tendencia, precio, proyeccion_eventos, k_ss=k_ss
-            )
-
-            texto = "HACER PEDIDO" if resultados["hacer_pedido_final"] == 1 else "NO HACER PEDIDO"
-            color = "#34A853" if resultados["hacer_pedido_final"] == 1 else "#5F6368"
-            st.markdown(f"<h2 style='color:{color}'>{texto}</h2>", unsafe_allow_html=True)
-
-            st.subheader("Cantidad sugerida")
-            st.write(f"{int(resultados['cantidad_final'])} unidades")
-
-            st.subheader("Justificación")
-            st.write(f"- Inventario: {inventario}")
-            st.write(f"- DLT ajustada: {resultados['dlt_aj']:.2f}")
-            st.write(f"- Stock de seguridad (aprox.): {resultados['ss']:.2f}")
-            st.write(f"- Punto de reorden (ROP): {resultados['rop']}")
-            st.write(f"- Regla ROP sugiere pedido: {'Sí' if resultados['hacer_pedido_regla'] else 'No'}")
-            st.write(f"- Clasificador sugiere pedido: {'Sí' if resultados['pred_bin']==1 else 'No'}")
-    else:
-        st.info("Sube un archivo en esta sección o en '📂 Subir archivo' para habilitar la predicción individual.")
-
-# ------------------------------
-# Dashboard (conecta a session_state si existe)
-# ------------------------------
-# ------------------------------
-# Predicciones individuales (usa Excel subido si existe)
+# Predicciones (individual)
 # ------------------------------
 elif menu == "🛒 Predicciones":
     st.header("Predicción de reabastecimiento (individual)")
@@ -243,9 +180,69 @@ elif menu == "🛒 Predicciones":
     else:
         st.info("Sube un archivo en esta sección o en '📂 Subir archivo' para habilitar la predicción individual.")
 
+# ------------------------------
+# Dashboard
+# ------------------------------
+elif menu == "📊 Dashboard":
+    st.header("Dashboard de métricas")
+    try:
+        if "df_dashboard" in st.session_state:
+            hist = st.session_state["df_dashboard"].copy()
+            st.info("Usando datos del Excel subido ✅")
+        else:
+            hist = pd.read_csv("data/historico_inventario.csv", parse_dates=["fecha"])
+            st.info("Usando histórico local 📂")
+
+        st.dataframe(hist.head(50), use_container_width=True)
+
+        # Métricas básicas
+        try:
+            met = calcular_metricas_basicas(hist.rename(columns={"ventas_promedio_dia":"unidades_vendidas"}))
+            st.metric("Nivel de servicio (%)", f"{met['nivel_servicio']:.1f}%")
+            st.metric("Rotación promedio (unid/día)", f"{met['rotacion_prom']:.2f}")
+            st.metric("Productos críticos (ROP – Punto de Reorden excedido)", f"{met['productos_criticos']}")
+        except Exception:
+            st.metric("Total productos", len(hist))
+            st.metric("Promedio ventas/día", f"{hist['ventas_promedio_dia'].mean():.2f}")
+            st.metric("Pedidos sugeridos", int((hist['inventario'] < hist['ventas_promedio_dia']).sum()))
+
+        # Selector de mes y top producto del mes
+        if "mes" in hist.columns:
+            st.subheader("Análisis por mes")
+            mes_sel = st.selectbox("Selecciona mes", sorted(hist["mes"].unique(), key=lambda m: MESES_MAP.get(m, 13)))
+            df_mes = hist[hist["mes"] == mes_sel].copy()
+
+            fig_inv = px.line(df_mes, x="producto", y="inventario", color="categoria", title=f"Inventario - {mes_sel}")
+            st.plotly_chart(fig_inv, use_container_width=True)
+
+            fig_vent = px.bar(df_mes, x="producto", y="ventas_promedio_dia", color="categoria", title=f"Ventas promedio/día - {mes_sel}")
+            st.plotly_chart(fig_vent, use_container_width=True)
+
+            ventas_mes = df_mes.groupby(["producto"])["ventas_promedio_dia"].sum().reset_index()
+            top_prod = ventas_mes.sort_values("ventas_promedio_dia", ascending=False).head(1)
+            if not top_prod.empty:
+                st.metric("Producto más vendido en el mes", top_prod.iloc[0]["producto"])
+                st.metric("Ventas promedio/día del top", f"{top_prod.iloc[0]['ventas_promedio_dia']:.2f}")
+
+            # Exportar 100 productos por mes
+            st.subheader("Exportar 100 productos por cada mes (ventas e inventario)")
+            if st.button("Generar Excel por mes (100 productos por mes)"):
+                frames = []
+                for mes_val in sorted(hist["mes"].unique(), key=lambda m: MESES_MAP.get(m, 13)):
+                    df_m = hist[hist["mes"] == mes_val].copy()
+                    df_m = df_m.sort_values("ventas_promedio_dia", ascending=False).head(100)
+                    df_m["mes_export"] = mes_val
+                    frames.append(df_m[["mes_export","producto","categoria","inventario","ventas_promedio_dia","lead_time","precio"]])
+                df_export = pd.concat(frames, ignore_index=True)
+                path = export_excel(df_export, "productos_por_mes_100.xlsx")
+                with open(path, "rb") as f:
+                    st.download_button("Descargar Excel por mes", f, file_name="productos_por_mes_100.xlsx")
+
+    except Exception as e:
+        st.warning(f"No se pudo cargar datos: {e}")
 
 # ------------------------------
-# Reportes históricos (usa datos subidos si existen)
+# Reportes
 # ------------------------------
 elif menu == "📑 Reportes":
     st.header("Reportes y análisis histórico")
@@ -263,10 +260,10 @@ elif menu == "📑 Reportes":
             prod_sel = st.selectbox("Producto", sorted(hist["producto"].unique()))
             dfp = hist[hist["producto"] == prod_sel].copy()
             fig = go.Figure()
-            if "fecha" in dfp.columns:
+            if "fecha" in dfp.columns and "unidades_vendidas" in dfp.columns:
                 dfp["ventas_prom_7d"] = dfp["unidades_vendidas"].rolling(7, min_periods=1).mean()
                 fig.add_trace(go.Scatter(x=dfp["fecha"], y=dfp["inventario"], name="Inventario"))
-                fig.add_trace(go.Scatter(x=dfp["fecha"], y=dfp["ventas_prom_7d"], name="Ventas promedio 7d"))
+                fig.add_trace(go.Scatter(x=dfp["fecha"], y=dfp["ventas_prom_7d"], name="Ventas promedio 7d (DLT – Demanda durante Lead Time)"))
             else:
                 fig.add_trace(go.Bar(x=dfp.get("mes", ["Mes actual"]), y=dfp["inventario"], name="Inventario"))
                 fig.add_trace(go.Bar(x=dfp.get("mes", ["Mes actual"]), y=dfp["ventas_promedio_dia"], name="Ventas prom/día"))
@@ -282,7 +279,7 @@ elif menu == "📑 Reportes":
         st.warning(f"No se pudo cargar histórico: {e}")
 
 # ------------------------------
-# Catálogo de productos (autoactualizable)
+# Catálogo
 # ------------------------------
 elif menu == "📦 Catálogo":
     st.header("Catálogo de productos")
@@ -318,7 +315,6 @@ elif menu == "📦 Catálogo":
         if "df_dashboard" in st.session_state:
             df_src = st.session_state["df_dashboard"].copy()
             base_nuevos = df_src[["producto","categoria"]].drop_duplicates()
-            # Asegurar columnas presentes
             if "lead_time" not in df_src.columns: df_src["lead_time"] = 2
             if "precio" not in df_src.columns: df_src["precio"] = 25
             base_nuevos = base_nuevos.merge(df_src[["producto","lead_time","precio"]], on="producto", how="left")
@@ -338,7 +334,7 @@ elif menu == "📦 Catálogo":
         st.warning(f"No se pudo cargar catálogo: {e}")
 
 # ------------------------------
-# Subir archivo (guarda en session_state y genera reporte)
+# Subir archivo
 # ------------------------------
 elif menu == "📂 Subir archivo":
     st.header("Subir archivo de inventario/ventas (CSV/Excel)")
@@ -363,7 +359,7 @@ elif menu == "📂 Subir archivo":
         st.subheader("Editar datos del archivo (interactivo)")
         df = st.data_editor(df, num_rows="dynamic", use_container_width=True)
 
-        # Guardar en session_state para Dashboard y otras secciones
+        # Guardar en session_state
         st.session_state["df_dashboard"] = df.copy()
         st.info("Datos guardados en memoria. El Dashboard y Predicciones usarán este archivo.")
 
@@ -373,17 +369,16 @@ elif menu == "📂 Subir archivo":
         except Exception:
             catalogo = pd.DataFrame(columns=["producto","categoria","lead_time","precio"])
 
-        # Asegurar columnas de catálogo
         for col in ["producto","categoria","lead_time","precio"]:
             if col not in catalogo.columns:
                 catalogo[col] = np.nan
 
-        # Merge con catálogo (evitar None en fillna)
+        # Merge con catálogo
         df = df.merge(catalogo[["producto","categoria","lead_time","precio"]].rename(
             columns={"categoria":"categoria_cat","lead_time":"lead_time_cat","precio":"precio_cat"}
         ), on="producto", how="left")
 
-        # Corrección: usar combine_first en lugar de fillna(None)
+        # Completar valores
         if "lead_time" not in df.columns: df["lead_time"] = np.nan
         if "precio" not in df.columns: df["precio"] = np.nan
         if "categoria" not in df.columns: df["categoria"] = np.nan
@@ -392,7 +387,7 @@ elif menu == "📂 Subir archivo":
         df["precio"] = df["precio"].combine_first(df["precio_cat"]).fillna(25)
         df["categoria"] = df["categoria"].combine_first(df["categoria_cat"]).fillna("General")
 
-        # Estacionalidad por mes si existe
+        # Estacionalidad y tendencia
         if "mes" in df.columns:
             df["mes_num"] = df["mes"].map(MESES_MAP).fillna(pd.Timestamp.today().month)
             df["estacionalidad"] = df["mes_num"].apply(asignar_estacionalidad_por_mes)
@@ -401,7 +396,6 @@ elif menu == "📂 Subir archivo":
             df["estacionalidad"] = asignar_estacionalidad_por_mes(mes_actual)
             df["mes"] = "Mes actual"
 
-        # Tendencia simple
         df["tendencia"] = np.where(df["ventas_promedio_dia"].diff().fillna(0) > 0, "subiendo", "estable")
         df["proyeccion_eventos"] = df.get("proyeccion_eventos", 0)
 
@@ -463,10 +457,10 @@ elif menu == "📂 Subir archivo":
         fig3 = px.pie(df_result, names="decision", title="Distribución de decisiones (Hacer vs No Hacer Pedido)")
         st.plotly_chart(fig3, use_container_width=True)
 
-        # Guardar datos subidos para ser usados en Dashboard y Reportes
+        # Guardar datos subidos
         st.session_state["df_dashboard"] = df.copy()
 
-        # Exportar 100 productos por cada mes (ventas e inventario)
+        # Exportar 100 productos por mes
         st.subheader("Exportar 100 productos por cada mes (ventas e inventario)")
         if "mes" in df.columns and st.button("Generar Excel por mes (100 productos por mes)"):
             frames = []
@@ -501,6 +495,9 @@ elif menu == "📂 Subir archivo":
         else:
             st.caption("No hay productos nuevos para agregar al catálogo.")
 
+# ------------------------------
+# Descargar ejemplo
+# ------------------------------
 elif menu == "📥 Descargar ejemplo":
     st.header("Descargar Excel de ejemplo con 150 productos y ventas mensuales")
 
@@ -555,7 +552,7 @@ elif menu == "⚙️ Configuración":
     if rol == "Admin":
         st.markdown("- Ajusta parámetros y recuerda reentrenar el modelo ejecutando `model_training.py`.")
         max_depth = st.slider("Profundidad máxima sugerida del árbol (informativo)", 2, 10, 4)
-        nivel_servicio_k = st.slider("Nivel de servicio (k para SS aprox.)", 0.5, 3.0, 1.28, 0.01)
+        nivel_servicio_k = st.slider("Nivel de servicio (k para SS – Stock de Seguridad)", 0.5, 3.0, 1.28, 0.01)
         st.info("Estos controles son informativos para documentación. Los parámetros reales se ajustan en model_training.py.")
         st.markdown("Sube nuevos datos a la carpeta `data/` y vuelve a entrenar para actualizar los modelos.")
     else:
