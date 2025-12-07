@@ -1,0 +1,8 @@
+fecha,producto,categoria,inventario,unidades_vendidas,tiempo_entrega_dias,estacionalidad,tendencia,precio,proyeccion_eventos
+2025-05-01,Leche 1L,Lácteos,35,12,2,alta,subiendo,25,0
+2025-05-02,Leche 1L,Lácteos,28,13,2,alta,subiendo,25,0
+2025-05-03,Leche 1L,Lácteos,20,15,2,alta,subiendo,25,1
+2025-05-01,Huevos 12 pz,Perecederos,50,18,1,media,estable,45,0
+2025-05-02,Huevos 12 pz,Perecederos,40,20,1,media,estable,45,0
+2025-05-03,Huevos 12 pz,Perecederos,30,22,1,media,estable,45,0
+
