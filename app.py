@@ -41,17 +41,28 @@ authenticator = stauth.Authenticate(
     cookie_expiry_days=1
 )
 
-name, authentication_status, username = authenticator.login("Iniciar sesión", location="main")
+authenticator.login("Iniciar sesión", location="main")
 
+# Mostrar formulario de login
+authenticator.login("Iniciar sesión", location="main")
 
+# Validar estado de autenticación
+if authenticator.authentication_status:
+    st.success(f"Bienvenido {authenticator.name}")
+elif authenticator.authentication_status is False:
+    st.error("Usuario o contraseña incorrectos")
+elif authenticator.authentication_status is None:
+    st.warning("Por favor ingresa tus credenciales")
+    st.stop()  # detener la app si no hay login
 
-if not authentication_status:
-    st.warning("Acceso restringido. Inicia sesión.")
-    st.stop()
+# Botón de logout en la barra lateral
+authenticator.logout("Cerrar sesión", "sidebar")
 
-authenticator.logout('Cerrar sesión', 'sidebar')
-st.sidebar.success(f'Bienvenido, {name}')
-rol = "Admin" if username == "admin" else "Compras"
+# Mensaje en la barra lateral
+st.sidebar.success(f"Bienvenido, {authenticator.name}")
+
+# Asignar rol según el usuario
+rol = "Admin" if authenticator.username == "admin" else "Compras"
 
 # ------------------------------
 # Cargar modelos
