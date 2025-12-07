@@ -102,91 +102,56 @@ if menu == "🏠 Bienvenida":
     - **Configuración**: parámetros del modelo.
     """)
 
-# ------------------------------
-# Predicciones individuales
-# ------------------------------
 elif menu == "🛒 Predicciones":
     st.header("Predicción de reabastecimiento (individual)")
-    col1, col2, col3 = st.columns(3)
 
-    with col1:
-        producto = st.text_input("Producto", "Leche 1L")
-        inventario = st.number_input("Inventario actual (unidades)", min_value=0, value=35)
-        ventas_prom = st.number_input("Ventas promedio por día", min_value=0.0, value=12.0)
-    with col2:
-        tiempo_entrega = st.number_input("Tiempo de entrega (días)", min_value=0.0, value=2.0)
-        estacionalidad = st.selectbox("Estacionalidad", ["alta", "media", "baja"], index=0)
-        tendencia = st.selectbox("Tendencia", ["subiendo", "estable", "bajando"], index=0)
-    with col3:
-        precio = st.number_input("Precio (MXN)", min_value=0.0, value=25.0)
-        proyeccion_eventos = st.number_input("Proyección de eventos (extra demanda)", min_value=0.0, value=0.0)
+    st.subheader("Sube tu archivo con productos")
+    archivo_ind = st.file_uploader("Archivo Excel o CSV", type=["csv", "xlsx"])
 
-    k_ss = st.slider("Nivel de servicio (k para stock de seguridad)", 0.5, 3.0, 1.28, 0.01)
+    if archivo_ind is not None:
+        if archivo_ind.name.endswith(".csv"):
+            df_ind = pd.read_csv(archivo_ind)
+        else:
+            df_ind = pd.read_excel(archivo_ind)
 
-    resultados = decision_y_cantidad(
-        inventario, ventas_prom, tiempo_entrega, estacionalidad, tendencia, precio, proyeccion_eventos, k_ss=k_ss
-    )
+        st.success("Archivo cargado correctamente ✅")
 
-    texto = "HACER PEDIDO" if resultados["hacer_pedido_final"] == 1 else "NO HACER PEDIDO"
-    color = "#34A853" if resultados["hacer_pedido_final"] == 1 else "#5F6368"
-    st.markdown(f"<h2 style='color:{color}'>{texto}</h2>", unsafe_allow_html=True)
+        producto_sel = st.selectbox("Selecciona un producto", df_ind["producto"].unique())
+        datos = df_ind[df_ind["producto"] == producto_sel].iloc[0]
 
-    st.subheader("Cantidad sugerida")
-    st.write(f"{int(resultados['cantidad_final'])} unidades")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            inventario = st.number_input("Inventario actual", min_value=0, value=int(datos["inventario"]))
+            ventas_prom = st.number_input("Ventas promedio por día", min_value=0.0, value=float(datos["ventas_promedio_dia"]))
+        with col2:
+            tiempo_entrega = st.number_input("Tiempo de entrega (días)", min_value=0.0, value=float(datos.get("lead_time", 2)))
+            estacionalidad = st.selectbox("Estacionalidad", ["alta", "media", "baja"], index=0)
+            tendencia = st.selectbox("Tendencia", ["subiendo", "estable", "bajando"], index=0)
+        with col3:
+            precio = st.number_input("Precio (MXN)", min_value=0.0, value=float(datos.get("precio", 25)))
+            proyeccion_eventos = st.number_input("Proyección de eventos", min_value=0.0, value=0.0)
 
-    st.subheader("Justificación")
-    st.write(f"- Inventario: {inventario}")
-    st.write(f"- DLT ajustada: {resultados['dlt_aj']:.2f}")
-    st.write(f"- Stock de seguridad (aprox.): {resultados['ss']:.2f}")
-    st.write(f"- Punto de reorden (ROP): {resultados['rop']}")
-    st.write(f"- Regla ROP sugiere pedido: {'Sí' if resultados['hacer_pedido_regla'] else 'No'}")
-    st.write(f"- Clasificador sugiere pedido: {'Sí' if resultados['pred_bin']==1 else 'No'}")
+        k_ss = st.slider("Nivel de servicio (k para stock de seguridad)", 0.5, 3.0, 1.28, 0.01)
 
-    fig = go.Figure()
-    fig.add_trace(go.Indicator(
-        mode="number+delta",
-        value=inventario,
-        title={"text": "Inventario actual"},
-        delta={"reference": resultados['rop'], "valueformat": ".0f",
-               "increasing": {"color": "red"}, "decreasing": {"color": "green"}}
-    ))
-    st.plotly_chart(fig, use_container_width=True)
+        resultados = decision_y_cantidad(
+            inventario, ventas_prom, tiempo_entrega, estacionalidad,
+            tendencia, precio, proyeccion_eventos, k_ss=k_ss
+        )
 
-    st.subheader("Descargar reporte")
-    resumen = {
-        "Producto": producto,
-        "Decisión": texto,
-        "Cantidad sugerida (unidades)": int(resultados['cantidad_final']),
-        "Inventario actual": inventario,
-        "DLT ajustada": f"{resultados['dlt_aj']:.2f}",
-        "Stock de seguridad (aprox.)": f"{resultados['ss']:.2f}",
-        "Punto de reorden (ROP)": resultados['rop'],
-        "Clasificador": "Hacer" if resultados['pred_bin']==1 else "No Hacer",
-        "Regla ROP": "Hacer" if resultados['hacer_pedido_regla']==1 else "No Hacer"
-    }
-    df_reporte = pd.DataFrame([{
-        "producto": producto,
-        "decision": texto,
-        "cantidad_sugerida": int(resultados['cantidad_final']),
-        "inventario": inventario,
-        "dlt_ajustada": resultados['dlt_aj'],
-        "stock_seguridad_aprox": resultados['ss'],
-        "rop": resultados['rop'],
-        "clasificador": "Hacer" if resultados['pred_bin']==1 else "No Hacer",
-        "regla_rop": "Hacer" if resultados['hacer_pedido_regla']==1 else "No Hacer"
-    }])
+        texto = "HACER PEDIDO" if resultados["hacer_pedido_final"] == 1 else "NO HACER PEDIDO"
+        color = "#34A853" if resultados["hacer_pedido_final"] == 1 else "#5F6368"
+        st.markdown(f"<h2 style='color:{color}'>{texto}</h2>", unsafe_allow_html=True)
 
-    colA, colB = st.columns(2)
-    with colA:
-        if st.button("Exportar Excel"):
-            path = export_excel(df_reporte, "reporte_satd_individual.xlsx")
-            with open(path, "rb") as f:
-                st.download_button("Descargar Excel", f, file_name="reporte_satd_individual.xlsx")
-    with colB:
-        if st.button("Exportar PDF"):
-            path = export_pdf(resumen, "reporte_satd_individual.pdf")
-            with open(path, "rb") as f:
-                st.download_button("Descargar PDF", f, file_name="reporte_satd_individual.pdf", mime="application/pdf")
+        st.subheader("Cantidad sugerida")
+        st.write(f"{int(resultados['cantidad_final'])} unidades")
+
+        st.subheader("Justificación")
+        st.write(f"- Inventario: {inventario}")
+        st.write(f"- DLT ajustada: {resultados['dlt_aj']:.2f}")
+        st.write(f"- Stock de seguridad (aprox.): {resultados['ss']:.2f}")
+        st.write(f"- Punto de reorden (ROP): {resultados['rop']}")
+        st.write(f"- Regla ROP sugiere pedido: {'Sí' if resultados['hacer_pedido_regla'] else 'No'}")
+        st.write(f"- Clasificador sugiere pedido: {'Sí' if resultados['pred_bin']==1 else 'No'}")
 
 # ------------------------------
 # Dashboard de métricas
