@@ -224,17 +224,22 @@ elif menu == "📊 Dashboard":
                 st.metric("Producto más vendido en el mes", top_prod.iloc[0]["producto"])
                 st.metric("Ventas promedio/día del top", f"{top_prod.iloc[0]['ventas_promedio_dia']:.2f}")
 
-            # Exportar SOLO el mes seleccionado
-            st.subheader(f"Exportar productos del mes {mes_sel}")
-            if st.button(f"Generar Excel ({mes_sel})"):
-                df_export = df_mes.sort_values("ventas_promedio_dia", ascending=False).head(100)
-                path = export_excel(df_export, f"productos_{mes_sel}.xlsx")
+            # Exportar 100 productos por mes
+            st.subheader("Exportar 100 productos por cada mes (ventas e inventario)")
+            if st.button("Generar Excel por mes (100 productos por mes)"):
+                frames = []
+                for mes_val in sorted(hist["mes"].unique(), key=lambda m: MESES_MAP.get(m, 13)):
+                    df_m = hist[hist["mes"] == mes_val].copy()
+                    df_m = df_m.sort_values("ventas_promedio_dia", ascending=False).head(100)
+                    df_m["mes_export"] = mes_val
+                    frames.append(df_m[["mes_export","producto","categoria","inventario","ventas_promedio_dia","lead_time","precio"]])
+                df_export = pd.concat(frames, ignore_index=True)
+                path = export_excel(df_export, "productos_por_mes_100.xlsx")
                 with open(path, "rb") as f:
-                    st.download_button(f"Descargar Excel {mes_sel}", f, file_name=f"productos_{mes_sel}.xlsx")
+                    st.download_button("Descargar Excel por mes", f, file_name="productos_por_mes_100.xlsx")
 
     except Exception as e:
         st.warning(f"No se pudo cargar datos: {e}")
-
 
 # ------------------------------
 # Reportes
