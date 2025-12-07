@@ -37,7 +37,7 @@ except Exception as e:
 st.sidebar.title("Menú")
 menu = st.sidebar.radio(
     "Selecciona",
-    ["🏠 Bienvenida", "🛒 Predicciones", "📊 Dashboard", "📑 Reportes", "📦 Catálogo", "📂 Subir archivo", "⚙️ Configuración"]
+    ["🏠 Bienvenida", "🛒 Predicciones", "📊 Dashboard", "📑 Reportes", "📦 Catálogo", "📂 Subir archivo", "⚙️ Configuración", "📥 Descargar ejemplo"]
 )
 
 # ------------------------------
@@ -317,7 +317,8 @@ elif menu == "📂 Subir archivo":
             resultados.append({
                 "producto": row["producto"],
                 "decision": "Hacer Pedido" if res["hacer_pedido_final"]==1 else "No Hacer Pedido",
-                "cantidad_sugerida": int(res["cantidad_final"])
+                "cantidad_sugerida": int(res["cantidad_final"]),
+                "ventas_promedio_dia": row["ventas_promedio_dia"]
             })
 
         df_result = pd.DataFrame(resultados)
@@ -329,6 +330,67 @@ elif menu == "📂 Subir archivo":
             path = export_excel(df_result, "reporte_batch.xlsx")
             with open(path, "rb") as f:
                 st.download_button("Descargar Excel", f, file_name="reporte_batch.xlsx")
+
+        # ------------------------------
+        # Visualización global
+        # ------------------------------
+        st.subheader("Visualización global de resultados")
+
+        # Top productos por ventas promedio
+        top_ventas = df_result.sort_values("ventas_promedio_dia", ascending=False).head(10)
+        fig1 = px.bar(top_ventas, x="producto", y="ventas_promedio_dia",
+                      title="Top 10 productos por ventas promedio/día",
+                      labels={"ventas_promedio_dia":"Ventas promedio/día"})
+        st.plotly_chart(fig1, use_container_width=True)
+
+        # Top productos por cantidad sugerida
+        top_cant = df_result.sort_values("cantidad_sugerida", ascending=False).head(10)
+        fig2 = px.bar(top_cant, x="producto", y="cantidad_sugerida",
+                      title="Top 10 productos por cantidad sugerida",
+                      labels={"cantidad_sugerida":"Cantidad sugerida"})
+        st.plotly_chart(fig2, use_container_width=True)
+
+        # Distribución de decisiones
+        fig3 = px.pie(df_result, names="decision", title="Distribución de decisiones (Hacer vs No Hacer Pedido)")
+        st.plotly_chart(fig3, use_container_width=True)
+
+# ------------------------------
+# Descargar Excel de ejemplo
+# ------------------------------
+elif menu == "📥 Descargar ejemplo":
+    st.header("Descargar Excel de ejemplo")
+
+    # Selector para cantidad de productos por categoría
+    cantidad = st.slider("Número de productos por categoría", 50, 200, 100, 10)
+
+    categorias = {
+        "Abarrotes": [f"Abarrote_{i}" for i in range(1, cantidad+1)],
+        "Bebidas": [f"Bebida_{i}" for i in range(1, cantidad+1)],
+        "Limpieza/Higiene": [f"Limpieza_{i}" for i in range(1, cantidad+1)]
+    }
+
+    productos = []
+    for cat, items in categorias.items():
+        for prod in items:
+            productos.append({
+                "producto": prod,
+                "categoria": cat,
+                "inventario": np.random.randint(10, 100),
+                "ventas_promedio_dia": np.random.randint(3, 30)
+            })
+
+    df_ejemplo = pd.DataFrame(productos)
+    st.dataframe(df_ejemplo.head(20), use_container_width=True)
+
+    if st.button("Generar Excel de ejemplo"):
+        path = export_excel(df_ejemplo, "inventario_ventas_ejemplo.xlsx")
+        with open(path, "rb") as f:
+            st.download_button(
+                "Descargar Excel",
+                f,
+                file_name="inventario_ventas_ejemplo.xlsx"
+            )
+
 
 # ------------------------------
 # Configuración del sistema
@@ -343,3 +405,5 @@ elif menu == "⚙️ Configuración":
         st.markdown("Sube nuevos datos a la carpeta `data/` y vuelve a entrenar para actualizar los modelos.")
     else:
         st.warning("Solo el administrador puede modificar configuración.")
+
+        
