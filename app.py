@@ -177,64 +177,72 @@ elif menu == "🛒 Predicciones":
 # ------------------------------
 # Dashboard (conecta a session_state si existe)
 # ------------------------------
-elif menu == "📊 Dashboard":
-    st.header("Dashboard de métricas")
-    try:
-        if "df_dashboard" in st.session_state:
-            hist = st.session_state["df_dashboard"].copy()
-            st.info("Usando datos del Excel subido ✅")
+# ------------------------------
+# Predicciones individuales (usa Excel subido si existe)
+# ------------------------------
+elif menu == "🛒 Predicciones":
+    st.header("Predicción de reabastecimiento (individual)")
+
+    df_ind = st.session_state.get("df_dashboard")
+    st.subheader("Sube tu archivo con productos (opcional)")
+    archivo_ind = st.file_uploader("Archivo Excel o CSV", type=["csv", "xlsx"], key="uploader_ind")
+
+    if archivo_ind is not None:
+        if archivo_ind.name.endswith(".csv"):
+            df_ind = pd.read_csv(archivo_ind)
         else:
-            hist = pd.read_csv("data/historico_inventario.csv", parse_dates=["fecha"])
-            st.info("Usando histórico local 📂")
+            df_ind = pd.read_excel(archivo_ind)
+        st.session_state["df_dashboard"] = df_ind.copy()
+        st.success("Archivo cargado correctamente ✅")
 
-        st.dataframe(hist.head(50), use_container_width=True)
+    if df_ind is not None:
+        colmap = {"Producto":"producto", "Categoria":"categoria", "Inventario":"inventario",
+                  "Ventas_promedio_dia":"ventas_promedio_dia", "Mes":"mes", "Lead_time":"lead_time", "Precio":"precio"}
+        df_ind = df_ind.rename(columns={k:v for k,v in colmap.items() if k in df_ind.columns})
 
-        # Métricas básicas
-        try:
-            met = calcular_metricas_basicas(hist.rename(columns={"ventas_promedio_dia":"unidades_vendidas"}))
-            st.metric("Nivel de servicio", f"{met['nivel_servicio']:.1f}%")
-            st.metric("Rotación promedio (unid/día)", f"{met['rotacion_prom']:.2f}")
-            st.metric("Productos críticos (ROP excedido)", f"{met['productos_criticos']}")
-        except Exception:
-            st.metric("Total productos", len(hist))
-            st.metric("Promedio ventas/día", f"{hist['ventas_promedio_dia'].mean():.2f}")
-            st.metric("Pedidos sugeridos", int((hist['inventario'] < hist['ventas_promedio_dia']).sum()))
+        st.dataframe(df_ind.head(), use_container_width=True)
 
-        # Selector de mes y top producto del mes
-        if "mes" in hist.columns:
-            st.subheader("Análisis por mes")
-            mes_sel = st.selectbox("Selecciona mes", sorted(hist["mes"].unique(), key=lambda m: MESES_MAP.get(m, 13)))
-            df_mes = hist[hist["mes"] == mes_sel].copy()
+        if "producto" not in df_ind.columns:
+            st.error("La columna 'producto' es obligatoria.")
+        else:
+            producto_sel = st.selectbox("Selecciona un producto", sorted(df_ind["producto"].unique()))
+            datos = df_ind[df_ind["producto"] == producto_sel].iloc[0]
 
-            fig_inv = px.line(df_mes, x="producto", y="inventario", color="categoria", title=f"Inventario - {mes_sel}")
-            st.plotly_chart(fig_inv, use_container_width=True)
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                inventario = st.number_input("Inventario actual (unidades)", min_value=0, value=int(datos.get("inventario", 0)))
+                ventas_prom = st.number_input("Ventas promedio por día", min_value=0.0, value=float(datos.get("ventas_promedio_dia", 0)))
+            with col2:
+                tiempo_entrega = st.number_input("Tiempo de entrega (días)", min_value=0.0, value=float(datos.get("lead_time", 2)))
+                estacionalidad = st.selectbox("Estacionalidad", ["alta", "media", "baja"], index=0)
+                tendencia = st.selectbox("Tendencia", ["subiendo", "estable", "bajando"], index=0)
+            with col3:
+                precio = st.number_input("Precio (MXN)", min_value=0.0, value=float(datos.get("precio", 25)))
+                proyeccion_eventos = st.number_input("Proyección de eventos (extra demanda)", min_value=0.0, value=float(datos.get("proyeccion_eventos", 0)))
 
-            fig_vent = px.bar(df_mes, x="producto", y="ventas_promedio_dia", color="categoria", title=f"Ventas promedio/día - {mes_sel}")
-            st.plotly_chart(fig_vent, use_container_width=True)
+            k_ss = st.slider("Nivel de servicio (k para Stock de Seguridad – SS)", 0.5, 3.0, 1.28, 0.01)
 
-            ventas_mes = df_mes.groupby(["producto"])["ventas_promedio_dia"].sum().reset_index()
-            top_prod = ventas_mes.sort_values("ventas_promedio_dia", ascending=False).head(1)
-            st.metric("Producto más vendido en el mes", top_prod.iloc[0]["producto"])
-            st.metric("Ventas promedio/día del top", f"{top_prod.iloc[0]['ventas_promedio_dia']:.2f}")
+            resultados = decision_y_cantidad(
+                inventario, ventas_prom, tiempo_entrega, estacionalidad, tendencia, precio, proyeccion_eventos, k_ss=k_ss
+            )
 
-            # Generar Excel con 100 productos por cada mes (ventas e inventario)
-            st.subheader("Exportar 100 productos por cada mes (ventas e inventario)")
-            if st.button("Generar Excel por mes (100 productos por mes)"):
-                # Para cada mes, tomar hasta 100 filas
-                frames = []
-                for mes_val in sorted(hist["mes"].unique(), key=lambda m: MESES_MAP.get(m, 13)):
-                    df_m = hist[hist["mes"] == mes_val].copy()
-                    # Ordenar por ventas para tomar los más representativos
-                    df_m = df_m.sort_values("ventas_promedio_dia", ascending=False).head(100)
-                    df_m["mes_export"] = mes_val
-                    frames.append(df_m[["mes_export","producto","categoria","inventario","ventas_promedio_dia","lead_time","precio"]])
-                df_export = pd.concat(frames, ignore_index=True)
-                path = export_excel(df_export, "productos_por_mes_100.xlsx")
-                with open(path, "rb") as f:
-                    st.download_button("Descargar Excel por mes", f, file_name="productos_por_mes_100.xlsx")
+            texto = "HACER PEDIDO" if resultados["hacer_pedido_final"] == 1 else "NO HACER PEDIDO"
+            color = "#34A853" if resultados["hacer_pedido_final"] == 1 else "#5F6368"
+            st.markdown(f"<h2 style='color:{color}'>{texto}</h2>", unsafe_allow_html=True)
 
-    except Exception as e:
-        st.warning(f"No se pudo cargar datos: {e}")
+            st.subheader("Cantidad sugerida")
+            st.write(f"{int(resultados['cantidad_final'])} unidades")
+
+            st.subheader("Justificación")
+            st.write(f"- Inventario: {inventario}")
+            st.write(f"- DLT ajustada (Demanda durante el Lead Time): {resultados['dlt_aj']:.2f}")
+            st.write(f"- Stock de seguridad (SS – inventario adicional): {resultados['ss']:.2f}")
+            st.write(f"- Punto de reorden (ROP – Reorder Point): {resultados['rop']}")
+            st.write(f"- Regla ROP sugiere pedido: {'Sí' if resultados['hacer_pedido_regla'] else 'No'}")
+            st.write(f"- Clasificador sugiere pedido: {'Sí' if resultados['pred_bin']==1 else 'No'}")
+    else:
+        st.info("Sube un archivo en esta sección o en '📂 Subir archivo' para habilitar la predicción individual.")
+
 
 # ------------------------------
 # Reportes históricos (usa datos subidos si existen)
@@ -493,50 +501,51 @@ elif menu == "📂 Subir archivo":
         else:
             st.caption("No hay productos nuevos para agregar al catálogo.")
 
-# ------------------------------
-# Descargar Excel de ejemplo con productos reales
-# ------------------------------
 elif menu == "📥 Descargar ejemplo":
-    st.header("Descargar Excel de ejemplo con productos reales")
+    st.header("Descargar Excel de ejemplo con 150 productos y ventas mensuales")
 
-    cantidad = st.slider("Número de productos por categoría", 50, 100, 50, 10)
     categorias = {
         "Abarrotes": ["Arroz 1kg","Frijol negro 1kg","Harina de trigo","Pasta espagueti","Aceite vegetal 1L",
                       "Azúcar 1kg","Sal 1kg","Atún en lata","Galletas María","Café molido 250g",
                       "Sopa instantánea","Pan de caja","Leche en polvo","Manteca vegetal","Harina de maíz",
-                      "Sardina en lata","Mayonesa","Catsup","Mermelada fresa","Avena 1kg",
-                      "Chocolate en polvo","Vinagre","Salsa picante","Maíz para palomitas","Cereal hojuelas"],
-        "Bebidas": ["Agua 1L","Refresco Coca-Cola 2L","Jugo naranja 1L","Leche entera 1L","Yogurt bebible",
-                    "Cerveza Corona 355ml","Vino tinto","Té helado","Red Bull","Café instantáneo",
-                    "Agua mineral","Refresco Pepsi 2L","Jugo manzana 1L","Cerveza Modelo","Whisky 750ml",
+                      "Sardina en lata","Mayonesa","Catsup","Mermelada fresa","Avena 1kg"],
+        "Bebidas": ["Agua 1L","Refresco sabor cola 2L","Jugo naranja 1L","Leche entera 1L","Yogurt bebible",
+                    "Cerveza clara 355ml","Vino tinto","Té helado","Red Bull","Café instantáneo",
+                    "Agua mineral","Refresco sabor limón 2L","Jugo manzana 1L","Cerveza oscura","Whisky escocés",
                     "Sidra","Agua saborizada","Electrolit","Leche deslactosada 1L","Kombucha"],
-        "Limpieza/Higiene": ["Detergente en polvo","Jabón de barra","Shampoo 750ml","Pasta dental","Papel higiénico 12pz",
-                             "Cloro 1L","Limpiador multiusos","Toallas sanitarias","Desodorante","Gel antibacterial",
+        "Limpieza/Higiene": ["Detergente en polvo","Jabón de barra","Shampoo anticaspa","Pasta dental","Papel higiénico 12 rollos",
+                             "Cloro líquido","Limpiador multiusos","Toallas sanitarias","Desodorante","Gel antibacterial",
                              "Suavizante de telas","Jabón líquido","Crema corporal","Rastrillos","Toallas húmedas",
-                             "Fibras limpiadoras","Guantes","Lavatrastes","Limpiador piso","Aromatizante"]
+                             "Fibras limpiadoras","Guantes","Lavatrastes","Limpiador piso","Aromatizante"],
+        "Frescos": ["Tomate","Papa","Cebolla","Zanahoria","Manzana","Plátano","Naranja","Pollo entero","Carne molida de res","Filete de pescado",
+                    "Calabacita","Pepino","Lechuga romana","Espinaca","Uva verde","Mango","Sandía","Melón","Huevo blanco docena","Queso fresco"],
+        "Otros básicos": ["Jamón de pavo","Crema ácida","Mantequilla","Yogurt natural","Pan dulce","Tortillas de maíz","Tortillas de harina","Chorizo","Salchicha","Queso Oaxaca",
+                          "Queso panela","Queso manchego","Gelatina en polvo","Flan de vainilla","Chocolate de mesa","Salsa verde","Salsa roja","Mole en pasta","Caldo de pollo en cubos","Caldo de res en cubos"]
     }
-    meses = MESES_TXT
+
+    meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"]
 
     productos = []
     for cat, items in categorias.items():
-        for prod in items[:cantidad]:
-            productos.append({
-                "producto": prod,
-                "categoria": cat,
-                "inventario": np.random.randint(10, 120),
-                "ventas_promedio_dia": np.random.randint(3, 40),
-                "mes": np.random.choice(meses),
-                "lead_time": np.random.randint(1, 5),
-                "precio": np.random.randint(10, 250)
-            })
+        for prod in items:
+            for mes in meses:
+                productos.append({
+                    "producto": prod,
+                    "categoria": cat,
+                    "mes": mes,
+                    "inventario": np.random.randint(10, 120),
+                    "ventas_promedio_dia": np.random.randint(3, 40),
+                    "lead_time": np.random.randint(1, 5),
+                    "precio": np.random.randint(10, 250)
+                })
 
     df_ejemplo = pd.DataFrame(productos)
     st.dataframe(df_ejemplo.head(20), use_container_width=True)
 
     if st.button("Generar Excel de ejemplo"):
-        path = export_excel(df_ejemplo, "inventario_ventas_reales.xlsx")
+        path = export_excel(df_ejemplo, "inventario_ventas_150productos.xlsx")
         with open(path, "rb") as f:
-            st.download_button("Descargar Excel", f, file_name="inventario_ventas_reales.xlsx")
+            st.download_button("Descargar Excel", f, file_name="inventario_ventas_150productos.xlsx")
 
 # ------------------------------
 # Configuración
