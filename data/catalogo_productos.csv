@@ -1,0 +1,4 @@
+producto,categoria,es_basico,stock_minimo,proveedor,tiempo_entrega_dias_promedio
+Leche 1L,Lácteos,1,30,Proveedor A,2
+Huevos 12 pz,Perecederos,1,40,Proveedor B,1
+Pan Blanco,Abarrotes,0,20,Proveedor C,2
