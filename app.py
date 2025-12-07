@@ -1,5 +1,4 @@
 import streamlit as st
-import streamlit_authenticator as stauth
 import pandas as pd
 import numpy as np
 import joblib
@@ -14,55 +13,13 @@ from utils_dashboard import calcular_metricas_basicas, preparar_series_promedio
 st.set_page_config(page_title="SATD Pro", page_icon="🛒", layout="wide")
 
 # ------------------------------
-# Login con roles
+# Usuario por defecto (sin autenticación)
 # ------------------------------
-names = ['Admin', 'Compras']
-usernames = ['admin', 'compras']
-# En producción, usa Settings → Secrets: passwords = ["admin123","compras123"]
-passwords = st.secrets.get("passwords", ['admin123', 'compras123'])
-
-credentials = {
-    "usernames": {
-        "admin": {
-            "name": "Administrador",
-            "password": "12345"
-        },
-        "compras": {
-            "name": "Compras",
-            "password": "67890"
-        }
-    }
-}
-
-authenticator = stauth.Authenticate(
-    credentials,
-    "satd_cookie",
-    "satd_signature",
-    cookie_expiry_days=1
-)
-
-#authenticator.login("Iniciar sesión", location="main")
-
-# Mostrar formulario de login
-#authenticator.login("Iniciar sesión", location="main")
-
-# Validar estado de autenticación
-#if authenticator.authentication_status:
- #   st.success(f"Bienvenido {authenticator.name}")
-#elif authenticator.authentication_status is False:
- #   st.error("Usuario o contraseña incorrectos")
-#elif authenticator.authentication_status is None:
-#    st.warning("Por favor ingresa tus credenciales")
-#    st.stop()  # detener la app si no hay login
-
-# Botón de logout en la barra lateral
-#authenticator.logout("Cerrar sesión", "sidebar")
-
-# Mensaje en la barra lateral
-#st.sidebar.success(f"Bienvenido, {authenticator.name}")
-
-#Asignar rol según el usuario
-rol = "Admin" if authenticator.username == "admin" else "Compras"
+# Cambia aquí el perfil por defecto si quieres simular "Compras"
+rol = "Admin"   # "Admin" o "Compras"
+usuario = "admin"
+nombre = "Administrador"
+st.sidebar.success(f"Bienvenido, {nombre}")
 
 # ------------------------------
 # Cargar modelos
