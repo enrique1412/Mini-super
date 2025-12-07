@@ -354,24 +354,23 @@ elif menu == "📂 Subir archivo":
         fig3 = px.pie(df_result, names="decision", title="Distribución de decisiones (Hacer vs No Hacer Pedido)")
         st.plotly_chart(fig3, use_container_width=True)
 
-# ------------------------------
-# Descargar Excel de ejemplo
-# ------------------------------
 elif menu == "📥 Descargar ejemplo":
-    st.header("Descargar Excel de ejemplo")
+    st.header("Descargar Excel de ejemplo con productos reales")
 
-    # Selector para cantidad de productos por categoría
-    cantidad = st.slider("Número de productos por categoría", 50, 200, 100, 10)
+    cantidad = st.slider("Número de productos por categoría", 50, 100, 50, 10)
 
     categorias = {
-        "Abarrotes": [f"Abarrote_{i}" for i in range(1, cantidad+1)],
-        "Bebidas": [f"Bebida_{i}" for i in range(1, cantidad+1)],
-        "Limpieza/Higiene": [f"Limpieza_{i}" for i in range(1, cantidad+1)]
+        "Abarrotes": ["Arroz 1kg","Frijol negro 1kg","Harina de trigo","Pasta espagueti","Aceite vegetal 1L",
+                      "Azúcar 1kg","Sal 1kg","Atún en lata","Galletas María","Café molido 250g", ...],
+        "Bebidas": ["Agua 1L","Refresco Coca-Cola 2L","Jugo naranja 1L","Leche entera 1L","Yogurt bebible",
+                    "Cerveza Corona 355ml","Vino tinto","Té helado","Red Bull","Café instantáneo", ...],
+        "Limpieza/Higiene": ["Detergente en polvo","Jabón de barra","Shampoo 750ml","Pasta dental","Papel higiénico 12pz",
+                             "Cloro 1L","Limpiador multiusos","Toallas sanitarias","Desodorante","Gel antibacterial", ...]
     }
 
     productos = []
     for cat, items in categorias.items():
-        for prod in items:
+        for prod in items[:cantidad]:
             productos.append({
                 "producto": prod,
                 "categoria": cat,
@@ -383,13 +382,9 @@ elif menu == "📥 Descargar ejemplo":
     st.dataframe(df_ejemplo.head(20), use_container_width=True)
 
     if st.button("Generar Excel de ejemplo"):
-        path = export_excel(df_ejemplo, "inventario_ventas_ejemplo.xlsx")
+        path = export_excel(df_ejemplo, "inventario_ventas_reales.xlsx")
         with open(path, "rb") as f:
-            st.download_button(
-                "Descargar Excel",
-                f,
-                file_name="inventario_ventas_ejemplo.xlsx"
-            )
+            st.download_button("Descargar Excel", f, file_name="inventario_ventas_reales.xlsx")
 
 
 # ------------------------------
