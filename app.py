@@ -285,10 +285,20 @@ elif menu == "📂 Subir archivo":
         # Cargar catálogo
         catalogo = pd.read_csv("data/catalogo_productos.csv")
 
-        # Enriquecer datos con catálogo
-        df = df.merge(catalogo[["producto","lead_time","precio"]], on="producto", how="left")
-        df["tiempo_entrega_dias"] = df["lead_time"].fillna(2)
-        df["precio"] = df["precio"].fillna(25)
+        # Enriquecer datos con catálogo (manejo seguro de columnas)
+        cols_existentes = [c for c in ["producto","lead_time","precio"] if c in catalogo.columns]
+        df = df.merge(catalogo[cols_existentes], on="producto", how="left")
+
+        # Valores por defecto si faltan columnas
+        if "lead_time" not in catalogo.columns:
+            df["tiempo_entrega_dias"] = 2
+        else:
+            df["tiempo_entrega_dias"] = df["lead_time"].fillna(2)
+
+        if "precio" not in catalogo.columns:
+            df["precio"] = 25
+        else:
+            df["precio"] = df["precio"].fillna(25)
 
         # Calcular estacionalidad y tendencia automáticamente
         mes = pd.Timestamp.today().month
@@ -339,21 +349,22 @@ elif menu == "📂 Subir archivo":
         # Top productos por ventas promedio
         top_ventas = df_result.sort_values("ventas_promedio_dia", ascending=False).head(10)
         fig1 = px.bar(top_ventas, x="producto", y="ventas_promedio_dia",
-                      title="Top 10 productos por ventas promedio/día",
-                      labels={"ventas_promedio_dia":"Ventas promedio/día"})
+                      title="Top 10 productos por ventas promedio/día")
         st.plotly_chart(fig1, use_container_width=True)
 
         # Top productos por cantidad sugerida
         top_cant = df_result.sort_values("cantidad_sugerida", ascending=False).head(10)
         fig2 = px.bar(top_cant, x="producto", y="cantidad_sugerida",
-                      title="Top 10 productos por cantidad sugerida",
-                      labels={"cantidad_sugerida":"Cantidad sugerida"})
+                      title="Top 10 productos por cantidad sugerida")
         st.plotly_chart(fig2, use_container_width=True)
 
         # Distribución de decisiones
         fig3 = px.pie(df_result, names="decision", title="Distribución de decisiones (Hacer vs No Hacer Pedido)")
         st.plotly_chart(fig3, use_container_width=True)
 
+# ------------------------------
+# Descargar Excel de ejemplo con productos reales
+# ------------------------------
 elif menu == "📥 Descargar ejemplo":
     st.header("Descargar Excel de ejemplo con productos reales")
 
@@ -361,11 +372,14 @@ elif menu == "📥 Descargar ejemplo":
 
     categorias = {
         "Abarrotes": ["Arroz 1kg","Frijol negro 1kg","Harina de trigo","Pasta espagueti","Aceite vegetal 1L",
-                      "Azúcar 1kg","Sal 1kg","Atún en lata","Galletas María","Café molido 250g", ...],
+                      "Azúcar 1kg","Sal 1kg","Atún en lata","Galletas María","Café molido 250g",
+                      "Sopa instantánea","Pan de caja","Leche en polvo","Manteca vegetal","Harina de maíz"],
         "Bebidas": ["Agua 1L","Refresco Coca-Cola 2L","Jugo naranja 1L","Leche entera 1L","Yogurt bebible",
-                    "Cerveza Corona 355ml","Vino tinto","Té helado","Red Bull","Café instantáneo", ...],
+                    "Cerveza Corona 355ml","Vino tinto","Té helado","Red Bull","Café instantáneo",
+                    "Agua mineral","Refresco Pepsi 2L","Jugo manzana 1L","Cerveza Modelo","Whisky 750ml"],
         "Limpieza/Higiene": ["Detergente en polvo","Jabón de barra","Shampoo 750ml","Pasta dental","Papel higiénico 12pz",
-                             "Cloro 1L","Limpiador multiusos","Toallas sanitarias","Desodorante","Gel antibacterial", ...]
+                             "Cloro 1L","Limpiador multiusos","Toallas sanitarias","Desodorante","Gel antibacterial",
+                             "Suavizante de telas","Jabón líquido","Crema corporal","Rastrillos","Toallas húmedas"]
     }
 
     productos = []
@@ -375,7 +389,9 @@ elif menu == "📥 Descargar ejemplo":
                 "producto": prod,
                 "categoria": cat,
                 "inventario": np.random.randint(10, 100),
-                "ventas_promedio_dia": np.random.randint(3, 30)
+                "ventas_promedio_dia": np.random.randint(3, 30),
+                "lead_time": np.random.randint(1, 5),
+                "precio": np.random.randint(10, 200)
             })
 
     df_ejemplo = pd.DataFrame(productos)
@@ -385,7 +401,6 @@ elif menu == "📥 Descargar ejemplo":
         path = export_excel(df_ejemplo, "inventario_ventas_reales.xlsx")
         with open(path, "rb") as f:
             st.download_button("Descargar Excel", f, file_name="inventario_ventas_reales.xlsx")
-
 
 # ------------------------------
 # Configuración del sistema
