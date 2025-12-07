@@ -269,65 +269,66 @@ elif menu == "📦 Catálogo":
 # Subir archivo para análisis en lote con IA
 # ------------------------------
 elif menu == "📂 Subir archivo":
-    st.header("Subir archivo de análisis (CSV/Excel)")
-    st.write("Columnas mínimas: inventario, ventas_promedio_dia, tiempo_entrega_dias, estacionalidad, tendencia, precio, proyeccion_eventos, producto (opcional).")
-
-    uploaded_file = st.file_uploader("Carga tu archivo CSV o Excel", type=["csv", "xlsx"])
+    st.header("Subir archivo de inventario/ventas (CSV/Excel)")
+    uploaded_file = st.file_uploader("Carga tu archivo", type=["csv","xlsx"])
 
     if uploaded_file is not None:
         # Leer archivo
-        try:
-            if uploaded_file.name.endswith(".csv"):
-                df = pd.read_csv(uploaded_file)
-            else:
-                df = pd.read_excel(uploaded_file)
-            st.success("Archivo cargado correctamente ✅")
-        except Exception as e:
-            st.error(f"Error al leer el archivo: {e}")
-            st.stop()
-
-        st.dataframe(df.head(20), use_container_width=True)
-
-        # Validación básica de columnas
-        required_cols = ["inventario","ventas_promedio_dia","tiempo_entrega_dias","estacionalidad","tendencia","precio","proyeccion_eventos"]
-        missing = [c for c in required_cols if c not in df.columns]
-        if missing:
-            st.error(f"Faltan columnas requeridas: {missing}")
+        if uploaded_file.name.endswith(".csv"):
+            df = pd.read_csv(uploaded_file)
         else:
-            # Aplicar IA en lote
-            try:
-                pred_bin = pipe_cls.predict(df[required_cols])
-                cantidad_pred = pipe_reg.predict(df[required_cols])
-            except Exception as e:
-                st.error(f"Error al aplicar modelos: {e}")
-                st.stop()
+            df = pd.read_excel(uploaded_file)
 
-            df_result = df.copy()
-            df_result["decision"] = ["Hacer Pedido" if int(x)==1 else "No Hacer Pedido" for x in pred_bin]
-            df_result["cantidad_sugerida"] = np.ceil(np.maximum(cantidad_pred, 0)).astype(int)
+        st.success("Archivo cargado correctamente ✅")
+        st.dataframe(df.head(), use_container_width=True)
 
-            st.subheader("Resultados del análisis con IA")
-            cols_show = ["producto"] if "producto" in df_result.columns else []
-            cols_show += ["inventario","ventas_promedio_dia","tiempo_entrega_dias","estacionalidad","tendencia","decision","cantidad_sugerida"]
-            st.dataframe(df_result[cols_show], use_container_width=True)
+        # Cargar catálogo
+        catalogo = pd.read_csv("data/catalogo_productos.csv")
 
-            # Exportar resultados
-            c1, c2 = st.columns(2)
-            with c1:
-                if st.button("Exportar Excel (lote)"):
-                    path = export_excel(df_result, "reporte_batch.xlsx")
-                    with open(path, "rb") as f:
-                        st.download_button("Descargar Excel", f, file_name="reporte_batch.xlsx")
-            with c2:
-                resumen_lote = {
-                    "Total filas": len(df_result),
-                    "Pedidos recomendados": int((df_result["decision"] == "Hacer Pedido").sum()),
-                    "Productos con cantidad > 0": int((df_result["cantidad_sugerida"] > 0).sum())
-                }
-                if st.button("Exportar PDF (resumen lote)"):
-                    path = export_pdf(resumen_lote, "reporte_batch_resumen.pdf")
-                    with open(path, "rb") as f:
-                        st.download_button("Descargar PDF", f, file_name="reporte_batch_resumen.pdf", mime="application/pdf")
+        # Enriquecer datos con catálogo
+        df = df.merge(catalogo[["producto","lead_time","precio"]], on="producto", how="left")
+        df["tiempo_entrega_dias"] = df["lead_time"].fillna(2)
+        df["precio"] = df["precio"].fillna(25)
+
+        # Calcular estacionalidad y tendencia automáticamente
+        mes = pd.Timestamp.today().month
+        if mes in [11,12,1]:
+            df["estacionalidad"] = "alta"
+        elif mes in [6,7,8]:
+            df["estacionalidad"] = "media"
+        else:
+            df["estacionalidad"] = "baja"
+
+        df["tendencia"] = np.where(df["ventas_promedio_dia"].diff().fillna(0) > 0, "subiendo", "estable")
+        df["proyeccion_eventos"] = 0
+
+        # Aplicar modelo a cada producto
+        resultados = []
+        for _, row in df.iterrows():
+            res = decision_y_cantidad(
+                row["inventario"],
+                row["ventas_promedio_dia"],
+                row["tiempo_entrega_dias"],
+                row["estacionalidad"],
+                row["tendencia"],
+                row["precio"],
+                row["proyeccion_eventos"]
+            )
+            resultados.append({
+                "producto": row["producto"],
+                "decision": "Hacer Pedido" if res["hacer_pedido_final"]==1 else "No Hacer Pedido",
+                "cantidad_sugerida": int(res["cantidad_final"])
+            })
+
+        df_result = pd.DataFrame(resultados)
+        st.subheader("Resultados del análisis")
+        st.dataframe(df_result, use_container_width=True)
+
+        # Exportar
+        if st.button("Exportar Excel"):
+            path = export_excel(df_result, "reporte_batch.xlsx")
+            with open(path, "rb") as f:
+                st.download_button("Descargar Excel", f, file_name="reporte_batch.xlsx")
 
 # ------------------------------
 # Configuración del sistema
