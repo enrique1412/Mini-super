@@ -21,11 +21,26 @@ usernames = ['admin', 'compras']
 # En producción, usa Settings → Secrets: passwords = ["admin123","compras123"]
 passwords = st.secrets.get("passwords", ['admin123', 'compras123'])
 
+credentials = {
+    "usernames": {
+        "admin": {
+            "name": "Administrador",
+            "password": "12345"
+        },
+        "compras": {
+            "name": "Compras",
+            "password": "67890"
+        }
+    }
+}
+
 authenticator = stauth.Authenticate(
-    names, usernames, passwords,
-    'satd_cookie', 'satd_signature',
+    credentials,
+    "satd_cookie",
+    "satd_signature",
     cookie_expiry_days=1
 )
+
 name, authentication_status, username = authenticator.login('Iniciar sesión', 'main')
 
 if not authentication_status:
